@@ -63,13 +63,15 @@ model VerificationToken {
 model AwsConnection {
   id         String   @id @default(cuid())
   userId     String
-  roleArn    String   // AWS IAM Role ARN for cross-account access
-  externalId String   // External ID for additional security
+  roleArn    String?  // AWS IAM Role ARN for cross-account access (null until verified)
+  externalId String   // External ID for additional security (service-generated)
   name       String?  // Optional friendly name
   user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
-  @@unique([userId, roleArn, externalId])
+  // Allow multiple connections per user; `roleArn` can be null (Postgres allows multiple NULLs in UNIQUE)
+  @@unique([userId, externalId])
+  @@unique([userId, roleArn])
   @@index([userId])
 }

@@ -1,86 +1,124 @@
 "use client";
 
-// Main dashboard page
 import { useSession, signOut } from "next-auth/react";
 import { AwsConnectionForm } from "@/components/aws-connection-form";
 import { BucketList } from "@/components/bucket-list";
-import { useEffect, useState } from "react";
+import { useState } from "react";
+import { ModeToggle } from "@/components/mode-toggle";
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardHeader,
+  CardTitle,
+  CardDescription,
+  CardContent,
+} from "@/components/ui/card";
+import { Cloud, ShieldCheck } from "lucide-react";
 
 export default function Home() {
   const { data: session, status } = useSession();
   const [refreshKey, setRefreshKey] = useState(0);
 
   const handleConnectionSuccess = () => {
-    // Trigger refresh of bucket list
     setRefreshKey((prev) => prev + 1);
   };
 
   if (status === "loading") {
     return (
-      <div className="flex min-h-screen items-center justify-center">
-        <p className="text-zinc-600 dark:text-zinc-400">Loading...</p>
+      <div className="flex min-h-screen items-center justify-center bg-background">
+        <p className="text-sm text-muted-foreground">Loading dashboard…</p>
       </div>
     );
   }
 
   if (!session) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-zinc-50 dark:bg-black">
-        <div className="w-full max-w-2xl rounded-lg border border-zinc-200 bg-white p-8 shadow-lg dark:border-zinc-800 dark:bg-zinc-900">
-          <h1 className="mb-4 text-3xl font-bold text-zinc-900 dark:text-zinc-50">
-            S3 Helper
-          </h1>
-          <p className="mb-6 text-zinc-600 dark:text-zinc-400">
-            Secure AWS S3 dashboard using STS AssumeRole. No AWS credentials stored.
-          </p>
-          <div className="flex gap-4">
-            <a
-              href="/auth/signin"
-              className="rounded-md bg-blue-600 px-6 py-3 font-medium text-white hover:bg-blue-700"
-            >
-              Sign In
-            </a>
-            <a
-              href="/auth/signup"
-              className="rounded-md border border-zinc-300 px-6 py-3 font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800"
-            >
-              Sign Up
-            </a>
+      <div className="flex min-h-screen items-center justify-center bg-background px-4">
+        <div className="mx-auto flex w-full max-w-xl flex-col gap-6">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Cloud className="h-6 w-6 text-primary" />
+              <span className="text-lg font-semibold tracking-tight">
+                S3 Helper
+              </span>
+            </div>
+            <ModeToggle />
           </div>
+
+          <Card className="border-border/60 shadow-sm">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-2xl">
+                <ShieldCheck className="h-5 w-5 text-emerald-500" />
+                Secure S3 dashboard
+              </CardTitle>
+              <CardDescription>
+                STS AssumeRole, zero long-term keys stored, principle of least
+                privilege by design.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <p className="text-sm text-muted-foreground leading-relaxed">
+                Create an account to connect AWS via a cross-account IAM role.
+                We generate a secure External ID and use temporary credentials
+                only.
+              </p>
+              <div className="flex flex-wrap gap-3">
+                <Button asChild>
+                  <a href="/auth/signin">Sign In</a>
+                </Button>
+                <Button asChild variant="outline">
+                  <a href="/auth/signup">Create Account</a>
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-zinc-50 dark:bg-black">
-      <nav className="border-b border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <div className="flex h-16 items-center justify-between">
-            <h1 className="text-xl font-bold text-zinc-900 dark:text-zinc-50">
-              S3 Helper
-            </h1>
-            <div className="flex items-center gap-4">
-              <span className="text-sm text-zinc-600 dark:text-zinc-400">
-                {session.user?.email}
+    <div className="flex min-h-screen flex-col bg-background">
+      <header className="border-b bg-card/60 backdrop-blur">
+        <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-4 sm:px-6 lg:px-8">
+          <div className="flex items-center gap-2">
+            <Cloud className="h-5 w-5 text-primary" />
+            <div className="flex flex-col">
+              <span className="text-sm font-semibold tracking-tight">
+                S3 Helper
               </span>
-              <button
-                onClick={() => signOut()}
-                className="rounded-md border border-zinc-300 px-4 py-2 text-sm font-medium text-zinc-700 hover:bg-zinc-50 dark:border-zinc-600 dark:text-zinc-300 dark:hover:bg-zinc-800"
-              >
-                Sign Out
-              </button>
+              <span className="text-xs text-muted-foreground">
+                Secure S3 dashboard
+              </span>
             </div>
           </div>
+          <div className="flex items-center gap-3">
+            <span className="hidden text-xs text-muted-foreground sm:inline">
+              {session.user?.email}
+            </span>
+            <ModeToggle />
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => signOut()}
+              className="text-xs sm:text-sm"
+            >
+              Sign Out
+            </Button>
+          </div>
         </div>
-      </nav>
+      </header>
 
-      <main className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-        <div className="space-y-6">
-          <AwsConnectionForm key={refreshKey} onSuccess={handleConnectionSuccess} />
+      <main className="mx-auto flex w-full max-w-6xl flex-1 flex-col gap-6 px-4 py-6 sm:px-6 lg:px-8">
+        <section className="grid gap-6 md:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)]">
+          <AwsConnectionForm
+            key={refreshKey}
+            onSuccess={handleConnectionSuccess}
+          />
           <BucketList key={`bucket-list-${refreshKey}`} />
-        </div>
+        </section>
       </main>
     </div>
   );
 }
+

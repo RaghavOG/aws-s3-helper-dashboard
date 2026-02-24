@@ -61,6 +61,13 @@ export async function GET(request: NextRequest) {
       );
     }
 
+    if (!connection.roleArn) {
+      return NextResponse.json(
+        { error: "AWS connection is not verified yet. Please paste a Role ARN and click Verify & Connect." },
+        { status: 409 }
+      );
+    }
+
     // Assume role and get temporary credentials
     const credentials = await assumeRole(connection.roleArn, connection.externalId);
 

@@ -8,6 +8,11 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { assumeRole, listBuckets } from "@/lib/aws";
+import crypto from "node:crypto";
+
+function generateExternalId(): string {
+  return crypto.randomBytes(32).toString("base64url");
+}
 
 export async function POST(request: NextRequest) {
   try {
@@ -20,13 +25,18 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const body = await request.json();
-    const { roleArn, externalId, name } = body;
+    const body: unknown = await request.json();
+    const parsed = body as Partial<{
+      roleArn: string;
+      name: string;
+      connectionId: string;
+    }>;
+    const { roleArn, name, connectionId } = parsed;
 
     // Validate input
-    if (!roleArn || !externalId) {
+    if (!roleArn) {
       return NextResponse.json(
-        { error: "roleArn and externalId are required" },
+        { error: "roleArn is required" },
         { status: 400 }
       );
     }
@@ -39,11 +49,36 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Step 1: Attempt to assume the role and verify access
-    // This validates that the role exists and externalId is correct
+    // Fetch the stored External ID (service-generated). Never trust browser input for this.
+    let connection = null as Awaited<ReturnType<typeof prisma.awsConnection.findFirst>> | null;
+    if (connectionId) {
+      connection = await prisma.awsConnection.findFirst({
+        where: { id: connectionId, userId: session.user.id },
+      });
+    }
+    if (!connection) {
+      // Fallback: latest pending connection, else create one
+      connection = await prisma.awsConnection.findFirst({
+        where: { userId: session.user.id, roleArn: null },
+        orderBy: { createdAt: "desc" },
+      });
+    }
+    if (!connection) {
+      connection = await prisma.awsConnection.create({
+        data: {
+          userId: session.user.id,
+          externalId: generateExternalId(),
+          roleArn: null,
+          name: "Pending AWS connection",
+        },
+      });
+    }
+
+    // Step 1: Attempt to assume the role and verify access.
+    // This validates that the role exists and the stored External ID is correct.
     let credentials;
     try {
-      credentials = await assumeRole(roleArn, externalId);
+      credentials = await assumeRole(roleArn, connection.externalId);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : "Unknown error";
       console.error("Failed to assume role:", errorMessage);
@@ -72,34 +107,30 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Step 3: Persist connection (only roleArn and externalId - NO credentials)
-    // Check if connection already exists
-    const existingConnection = await prisma.awsConnection.findFirst({
+    // Step 3: Persist connection (only roleArn + externalId; NO credentials).
+    // We update the pending connection with the verified roleArn.
+    // If a connection for this (userId, roleArn) already exists, re-use it
+    // and clean up the extra pending row instead of violating the unique constraint.
+    const existingByRole = await prisma.awsConnection.findFirst({
       where: {
         userId: session.user.id,
         roleArn,
-        externalId,
       },
     });
 
-    let connection;
-    if (existingConnection) {
-      // Update existing connection
-      connection = await prisma.awsConnection.update({
-        where: { id: existingConnection.id },
-        data: {
-          name: name || existingConnection.name,
-          updatedAt: new Date(),
-        },
-      });
+    if (existingByRole && existingByRole.id !== connection.id) {
+      // We already have a verified connection for this role.
+      // Delete the extra pending row (if it was pending) and use the existing one.
+      if (connection.roleArn === null) {
+        await prisma.awsConnection.delete({ where: { id: connection.id } });
+      }
+      connection = existingByRole;
     } else {
-      // Create new connection
-      connection = await prisma.awsConnection.create({
+      connection = await prisma.awsConnection.update({
+        where: { id: connection.id },
         data: {
-          userId: session.user.id,
           roleArn,
-          externalId,
-          name: name || `AWS Connection ${new Date().toLocaleDateString()}`,
+          name: name || connection.name,
         },
       });
     }
@@ -108,7 +139,7 @@ export async function POST(request: NextRequest) {
       success: true,
       connection: {
         id: connection.id,
-        roleArn: connection.roleArn,
+        roleArn: connection.roleArn ?? "",
         name: connection.name,
         createdAt: connection.createdAt,
       },
